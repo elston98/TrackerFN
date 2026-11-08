@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrackerFN – Financial Goals</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Tracker<span>FN</span></div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="dashboard" class="active">Dashboard</button>
+      <button data-tab="accounts">Accounts</button>
+      <button data-tab="savings">Savings</button>
+      <button data-tab="loans">Loans &amp; EMIs</button>
+      <button data-tab="milestones">Milestones</button>
+    </nav>
+    <div class="top-actions">
+      <select id="currency" title="Currency">
+        <option value="INR">₹ INR</option>
+        <option value="USD">$ USD</option>
+        <option value="EUR">€ EUR</option>
+        <option value="GBP">£ GBP</option>
+      </select>
+      <button class="ghost" data-action="export" title="Download a JSON backup">Export</button>
+      <label class="ghost button" title="Restore from a JSON backup">
+        Import<input type="file" id="importFile" accept="application/json" hidden />
+      </label>
+    </div>
+  </header>
+
+  <main id="view"></main>
+
+  <dialog id="modal">
+    <form id="modalForm" method="dialog">
+      <h2 id="modalTitle"></h2>
+      <div id="modalBody"></div>
+      <p class="form-error" id="modalError"></p>
+      <div class="modal-actions">
+        <button type="button" class="ghost" data-action="modal-cancel">Cancel</button>
+        <button type="submit" class="primary" id="modalSubmit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/logic.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
