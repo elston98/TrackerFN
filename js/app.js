@@ -24,9 +24,27 @@
   function normalize(data) {
     const base = L.emptyState();
     const s = { ...base, ...data, settings: { ...base.settings, ...(data.settings || {}) } };
-    for (const k of ['accounts', 'savings', 'loans', 'milestones']) if (!Array.isArray(s[k])) s[k] = [];
+    for (const k of ['accounts', 'savings', 'insurance', 'loans', 'milestones']) if (!Array.isArray(s[k])) s[k] = [];
+    // Older data kept life insurance as a savings instrument; move it to policies.
+    for (const inv of s.savings.filter((x) => x.type === 'Life Insurance')) {
+      const old = [inv.invested && `invested ${inv.invested}`, inv.currentValue && `value ${inv.currentValue}`].filter(Boolean).join(', ');
+      s.insurance.push({
+        id: inv.id,
+        policyType: 'Other',
+        name: inv.name,
+        provider: inv.provider,
+        sumInsured: '',
+        premium: inv.monthly || '',
+        premiumFrequency: 'Monthly',
+        startDate: inv.startDate || '',
+        endDate: inv.maturityDate || '',
+        notes: [inv.notes, old && `Moved from savings (${old}). Please enter the sum insured.`].filter(Boolean).join(' '),
+      });
+    }
+    s.savings = s.savings.filter((x) => x.type !== 'Life Insurance');
     s.accounts.forEach((a) => { if (!Array.isArray(a.entries)) a.entries = []; });
     s.milestones.forEach((m) => { if (!m.allocations || typeof m.allocations !== 'object') m.allocations = {}; });
+    L.pruneAllocations(s);
     return s;
   }
 
@@ -177,7 +195,8 @@
 
   function renderDashboard() {
     const s = L.summary(state);
-    const isEmpty = !state.accounts.length && !state.savings.length && !state.loans.length && !state.milestones.length;
+    const isEmpty = !state.accounts.length && !state.savings.length && !state.insurance.length && !state.loans.length && !state.milestones.length;
+    const ins = L.insuranceTotals(state.insurance);
 
     let html = `<div class="section-head"><h1>Dashboard</h1><span class="muted small">As of ${fmtDate(L.todayISO())}</span></div>`;
 
@@ -197,6 +216,7 @@
       ${kpi('Savings & investments', money(s.savingsTotal), `${state.savings.length} instrument(s)`)}
       ${kpi('Loan outstanding', money(s.loanOutstanding), `EMI ${money(s.monthlyEmi)}/month · ${s.openLoanCount} open`, s.loanOutstanding ? 'neg' : '')}
       ${kpi('Unallocated savings', money(s.unallocated), `${money(s.allocated)} earmarked for goals`, s.unallocated < 0 ? 'neg' : '')}
+      ${kpi('Life cover', money(ins.sumInsured), `${ins.count} active polic${ins.count === 1 ? 'y' : 'ies'} · premium ${money(ins.annualPremium)}/yr`)}
     </div>`;
 
     // Accounts + milestones
@@ -248,6 +268,15 @@
       html += `</tbody><tfoot><tr><td>Total</td><td class="right">${money(s.monthlyEmi)}</td><td class="right">${money(s.loanOutstanding)}</td><td></td></tr></tfoot></table></div>`;
     } else html += `<div class="empty">No open loans or EMIs. 🎉</div>`;
     html += `</div></div>`;
+
+    html += `<div class="card" style="margin-top:16px"><div class="section-head"><div><h2 style="margin:0">Life insurance</h2>
+      <div class="muted small">Protection cover. Not counted in net worth or milestone allocation.</div></div><button class="sm" data-action="go" data-tab="savings">Manage</button></div>`;
+    if (state.insurance.length) {
+      html += `<div class="table-wrap"><table><thead><tr><th>Policy</th><th>Type</th><th class="right">Sum insured</th><th class="right">Premium / year</th><th>Cover till</th></tr></thead><tbody>`;
+      for (const p of state.insurance) html += insuranceRowShort(p);
+      html += `</tbody><tfoot><tr><td colspan="2">Total active cover</td><td class="right">${money(ins.sumInsured)}</td><td class="right">${money(ins.annualPremium)}</td><td></td></tr></tfoot></table></div>`;
+    } else html += `<div class="empty">No life insurance policies added.</div>`;
+    html += `</div>`;
 
     return html;
   }
@@ -376,7 +405,9 @@
     let html = `<div class="section-head"><div><h1>Savings &amp; Investments</h1><div class="muted small">Total value ${money(total)} · invested ${money(invested)} · gain ${signedMoney(total - invested)}</div></div>
       <button class="primary" data-action="add-savings">+ Add savings</button></div>`;
 
-    html += `<div class="grid kpis">${L.SAVINGS_TYPES.map((t) => kpi(t, money(byType[t].value), `${byType[t].count} holding(s)`)).join('')}</div>`;
+    const ins = L.insuranceTotals(state.insurance);
+    html += `<div class="grid kpis">${L.SAVINGS_TYPES.map((t) => kpi(t, money(byType[t].value), `${byType[t].count} holding(s)`)).join('')}
+      ${kpi('Life cover', money(ins.sumInsured), `${ins.count} active · not in savings total`)}</div>`;
 
     for (const type of L.SAVINGS_TYPES) {
       const items = state.savings.filter((s) => s.type === type);
@@ -390,7 +421,7 @@
       for (const s of items) {
         const src = allocBySource['inv:' + s.id];
         html += `<tr><td><b>${esc(s.name)}</b><div class="muted small">${esc(s.provider || '')}${s.updatedOn ? ' · value as of ' + fmtDate(s.updatedOn) : ''}</div></td>
-          <td class="right">${money(s.invested)}</td><td class="right"><b>${money(s.currentValue)}</b></td><td class="right">${signedMoney(L.savingsGain(s))}</td>
+          <td class="right">${money(s.invested)}</td><td class="right"><b>${money(s.currentValue)}</b></td><td class="right nowrap">${signedMoney(L.savingsGain(s))}</td>
           <td class="right">${s.rate !== '' && s.rate != null ? esc(s.rate) + '%' : '—'}</td>
           <td class="right">${L.num(s.monthly) ? money(s.monthly) : '—'}</td>
           <td class="nowrap">${fmtDate(s.maturityDate)}</td>
@@ -401,7 +432,66 @@
       }
       html += `</tbody></table></div>`;
     }
+
+    html += `<div class="section-head"><div><h2 style="margin:0">Life Insurance</h2>
+      <div class="muted small">Tracked by sum insured. Excluded from savings total, net worth and milestone allocation.</div></div>
+      <button class="sm" data-action="add-insurance">+ Add policy</button></div>`;
+    if (!state.insurance.length) {
+      html += `<div class="empty small">No life insurance policies added.</div>`;
+    } else {
+      html += `<div class="card table-wrap"><table><thead><tr><th>Policy</th><th>Type</th><th class="right">Sum insured</th><th class="right">Premium</th>
+        <th class="right">Per year</th><th>Start</th><th>Cover till</th><th>Nominee</th><th></th></tr></thead><tbody>`;
+      for (const p of state.insurance) {
+        const active = L.policyActive(p);
+        html += `<tr><td><b>${esc(p.name)}</b><div class="muted small">${esc(p.provider || '')}${p.policyNumber ? ' · #' + esc(p.policyNumber) : ''}</div>
+            ${p.notes ? `<div class="muted small">${esc(p.notes)}</div>` : ''}</td>
+          <td><span class="badge">${esc(p.policyType)}</span>${active ? '' : ' <span class="badge grey">Expired</span>'}</td>
+          <td class="right"><b>${p.sumInsured === '' || p.sumInsured == null ? '<span class="badge warn">enter</span>' : money(p.sumInsured)}</b></td>
+          <td class="right nowrap">${L.num(p.premium) ? `${money(p.premium)} <span class="muted small">${esc(p.premiumFrequency || '')}</span>` : '—'}</td>
+          <td class="right">${L.annualPremium(p) ? money(L.annualPremium(p)) : '—'}</td>
+          <td class="nowrap">${fmtDate(p.startDate)}</td><td class="nowrap">${fmtDate(p.endDate)}</td><td>${esc(p.nominee || '—')}</td>
+          <td class="actions"><button class="sm" data-action="edit-insurance" data-id="${p.id}">Edit</button>
+            <button class="sm danger" data-action="delete-insurance" data-id="${p.id}">✕</button></td></tr>`;
+      }
+      html += `</tbody><tfoot><tr><td colspan="2">Total active cover</td><td class="right">${money(ins.sumInsured)}</td><td></td><td class="right">${money(ins.annualPremium)}</td><td colspan="4"></td></tr></tfoot></table></div>`;
+    }
     return html;
+  }
+
+  function insuranceRowShort(p) {
+    const active = L.policyActive(p);
+    return `<tr class="${active ? '' : 'future'}"><td>${esc(p.name)}<div class="muted small">${esc(p.provider || '')}</div></td>
+      <td><span class="badge">${esc(p.policyType)}</span>${active ? '' : ' <span class="badge grey">Expired</span>'}</td>
+      <td class="right"><b>${p.sumInsured === '' || p.sumInsured == null ? '—' : money(p.sumInsured)}</b></td>
+      <td class="right">${L.annualPremium(p) ? money(L.annualPremium(p)) : '—'}</td><td class="nowrap">${fmtDate(p.endDate)}</td></tr>`;
+  }
+
+  const insuranceFields = [
+    { name: 'policyType', label: 'Policy type', type: 'select', options: L.INSURANCE_TYPES, default: 'Term Life' },
+    { name: 'name', label: 'Policy name', required: true, placeholder: 'e.g. Click2Protect Term Plan' },
+    { name: 'provider', label: 'Insurer', placeholder: 'e.g. HDFC Life / LIC' },
+    { name: 'policyNumber', label: 'Policy number', placeholder: 'optional' },
+    { name: 'sumInsured', label: 'Sum insured', type: 'number', min: 0, required: true },
+    { name: 'premium', label: 'Premium amount', type: 'number', min: 0 },
+    { name: 'premiumFrequency', label: 'Premium frequency', type: 'select', options: Object.keys(L.PREMIUM_FREQUENCIES), default: 'Yearly' },
+    { name: 'nominee', label: 'Nominee', placeholder: 'optional' },
+    { name: 'startDate', label: 'Start date', type: 'date' },
+    { name: 'endDate', label: 'Cover till', type: 'date', hint: 'Policy term end / maturity date' },
+    { name: 'notes', label: 'Notes', type: 'textarea', full: true },
+  ];
+
+  function insuranceForm(existing) {
+    openForm({
+      title: existing ? 'Edit life insurance policy' : 'Add life insurance policy',
+      fields: insuranceFields,
+      values: existing || {},
+      onSubmit: (v) => {
+        if (!v.name) return 'Policy name is required';
+        if (v.sumInsured === '' || v.sumInsured < 0) return 'Enter the sum insured';
+        if (existing) Object.assign(existing, v);
+        else state.insurance.push({ id: L.uid(), ...v });
+      },
+    });
   }
 
   const savingsFields = [
@@ -412,7 +502,7 @@
     { name: 'currentValue', label: 'Current value', type: 'number', min: 0, required: true },
     { name: 'updatedOn', label: 'Value as of', type: 'date', default: L.todayISO() },
     { name: 'rate', label: 'Interest / return (% p.a.)', type: 'number', placeholder: 'optional' },
-    { name: 'monthly', label: 'Monthly contribution', type: 'number', min: 0, hint: 'SIP / RD instalment / premium / PF contribution' },
+    { name: 'monthly', label: 'Monthly contribution', type: 'number', min: 0, hint: 'SIP / RD instalment / PF contribution' },
     { name: 'startDate', label: 'Start date', type: 'date' },
     { name: 'maturityDate', label: 'Maturity date', type: 'date' },
     { name: 'notes', label: 'Notes', type: 'textarea', full: true },
@@ -720,9 +810,12 @@
       inv('Mutual Fund', 'Flexi Cap Fund', 'Parag Parikh', 180000, 214000, { monthly: 10000, startDate: ago(18) }),
       inv('Fixed Deposit', 'FD 1 year', 'ICICI Bank', 200000, 207500, { rate: 7.1, startDate: ago(5), maturityDate: L.addMonths(t, 7) }),
       inv('Recurring Deposit', 'RD 24 months', 'SBI', 60000, 62300, { rate: 6.8, monthly: 5000, startDate: ago(12), maturityDate: L.addMonths(t, 12) }),
-      inv('Life Insurance', 'Endowment Plan', 'LIC', 120000, 135000, { monthly: 4000, maturityDate: L.addMonths(t, 120) }),
       inv('Provident Fund', 'EPF', 'EPFO', 420000, 485000, { rate: 8.25, monthly: 7200 }),
       inv('Provident Fund', 'PPF', 'Post Office', 150000, 168000, { rate: 7.1 }),
+    ];
+    s.insurance = [
+      { id: L.uid(), policyType: 'Term Life', name: 'Term Plan', provider: 'HDFC Life', sumInsured: 10000000, premium: 14500, premiumFrequency: 'Yearly', nominee: 'Spouse', startDate: ago(36), endDate: L.addMonths(t, 360) },
+      { id: L.uid(), policyType: 'Endowment', name: 'Jeevan Labh', provider: 'LIC', sumInsured: 1000000, premium: 4000, premiumFrequency: 'Monthly', startDate: ago(60), endDate: L.addMonths(t, 120) },
     ];
     s.loans = [
       { id: L.uid(), status: 'open', type: 'Home Loan', name: 'Apartment', lender: 'SBI Home Loans', principal: 4500000, outstanding: 3820000, emi: 39500, rate: 8.5, startDate: ago(30), tenureMonths: 240 },
@@ -814,6 +907,16 @@
       const s = find('savings', d.id);
       if (confirm(`Delete "${s.name}"? Any goal allocations from it will be removed.`)) {
         state.savings = state.savings.filter((x) => x.id !== d.id);
+        save();
+      }
+    },
+
+    'add-insurance': () => insuranceForm(null),
+    'edit-insurance': (d) => insuranceForm(find('insurance', d.id)),
+    'delete-insurance': (d) => {
+      const p = find('insurance', d.id);
+      if (confirm(`Delete policy "${p.name}"?`)) {
+        state.insurance = state.insurance.filter((x) => x.id !== d.id);
         save();
       }
     },

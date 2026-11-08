@@ -19,8 +19,12 @@ Click **Load sample data** on the empty dashboard to try it out.
 - **Accounts** (Savings / Salary / Current / Other): add dated balance updates
   (credit, debit, or "set balance to"). The latest balance includes every entry up to today.
   Future-dated entries are shown as scheduled. Full history with a running balance.
-- **Savings**: Mutual Funds, Fixed Deposits, Recurring Deposits, Life Insurance, Provident Fund
-  and Other. Tracks amount invested, current value, gain, rate, monthly contribution and maturity date.
+- **Savings**: Mutual Funds, Fixed Deposits, Recurring Deposits, Provident Fund and Other.
+  Tracks amount invested, current value, gain, rate, monthly contribution and maturity date.
+- **Life insurance** (Term, Endowment, ULIP, and others): tracked by **sum insured** and premium, not by amount
+  invested. Shown separately on the dashboard as life cover and **not** counted in net worth or
+  milestone allocation. Life insurance saved by an older version is moved here automatically;
+  enter its sum insured afterwards.
 - **Loans & EMIs**: add home loans, credit card EMIs and other loans. Tracks outstanding amount,
   EMI, rate, tenure, end date and EMIs left. Close or reopen a loan, and see your total monthly EMI.
 - **Milestones**: set goals with a target amount, target date and priority, then allocate savings

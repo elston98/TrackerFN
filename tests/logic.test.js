@@ -101,3 +101,24 @@ test('summary net worth = accounts + savings - open loans', () => {
   const sum = L.summary(s, '2026-06-01');
   assert.equal(sum.netWorth, 100 + 999 + 300 - 400);
 });
+
+test('life insurance: annual premium and active cover totals', () => {
+  assert.equal(L.annualPremium({ premium: 1000, premiumFrequency: 'Monthly' }), 12000);
+  assert.equal(L.annualPremium({ premium: 5000, premiumFrequency: 'Half-yearly' }), 10000);
+  assert.equal(L.annualPremium({ premium: 90000, premiumFrequency: 'Single' }), 0);
+  const policies = [
+    { sumInsured: 10000000, premium: 15000, premiumFrequency: 'Yearly', endDate: '2050-01-01' },
+    { sumInsured: 500000, premium: 2000, premiumFrequency: 'Monthly', endDate: '2020-01-01' }, // expired
+  ];
+  assert.deepEqual(L.insuranceTotals(policies, '2026-06-01'), { count: 1, sumInsured: 10000000, annualPremium: 15000 });
+  assert.ok(!L.SAVINGS_TYPES.includes('Life Insurance'));
+});
+
+test('life insurance is excluded from net worth and allocation pool', () => {
+  const s = sampleState();
+  const before = L.summary(s, '2026-06-01');
+  s.insurance = [{ id: 'p1', policyType: 'Term Life', name: 'Term', sumInsured: 10000000, premium: 12000, premiumFrequency: 'Yearly' }];
+  const after = L.summary(s, '2026-06-01');
+  assert.deepEqual(after, before);
+  assert.ok(!L.allocationSources(s, '2026-06-01').some((x) => x.key.endsWith('p1')));
+});

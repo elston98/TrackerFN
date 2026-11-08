@@ -10,10 +10,13 @@
     'Mutual Fund',
     'Fixed Deposit',
     'Recurring Deposit',
-    'Life Insurance',
     'Provident Fund',
     'Other',
   ];
+  // Life insurance is protection, not an asset: tracked by sum insured and
+  // premium, and excluded from net worth and milestone allocation.
+  const INSURANCE_TYPES = ['Term Life', 'Endowment', 'Money Back', 'ULIP', 'Whole Life', 'Other'];
+  const PREMIUM_FREQUENCIES = { Monthly: 12, Quarterly: 4, 'Half-yearly': 2, Yearly: 1, Single: 0 };
   const LOAN_TYPES = ['Home Loan', 'Credit Card EMI', 'Personal Loan', 'Car Loan', 'Other'];
   const PRIORITIES = ['High', 'Medium', 'Low'];
 
@@ -39,6 +42,7 @@
       settings: { currency: 'INR' },
       accounts: [],
       savings: [],
+      insurance: [],
       loans: [],
       milestones: [],
     };
@@ -108,6 +112,26 @@
       bucket.value += num(s.currentValue);
     }
     return out;
+  }
+
+  /* ---------------- Life insurance ---------------- */
+
+  function annualPremium(policy) {
+    const perYear = PREMIUM_FREQUENCIES[policy.premiumFrequency];
+    return num(policy.premium) * (perYear == null ? 1 : perYear);
+  }
+
+  function policyActive(policy, asOf) {
+    return !policy.endDate || policy.endDate >= (asOf || todayISO());
+  }
+
+  function insuranceTotals(policies, asOf) {
+    const active = (policies || []).filter((p) => policyActive(p, asOf));
+    return {
+      count: active.length,
+      sumInsured: active.reduce((s, p) => s + num(p.sumInsured), 0),
+      annualPremium: active.reduce((s, p) => s + annualPremium(p), 0),
+    };
   }
 
   /* ---------------- Loans / EMIs ---------------- */
@@ -291,6 +315,8 @@
   const api = {
     ACCOUNT_TYPES,
     SAVINGS_TYPES,
+    INSURANCE_TYPES,
+    PREMIUM_FREQUENCIES,
     LOAN_TYPES,
     PRIORITIES,
     todayISO,
@@ -303,6 +329,9 @@
     nextSeq,
     savingsGain,
     savingsByType,
+    annualPremium,
+    policyActive,
+    insuranceTotals,
     monthsBetween,
     addMonths,
     loanEndDate,
